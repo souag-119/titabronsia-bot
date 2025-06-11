@@ -4,6 +4,7 @@ from discord import app_commands
 import os
 from flask import Flask
 from threading import Thread
+import asyncio  # ← أضفنا هذا للسليب
 
 # إعداد Flask
 app = Flask(__name__)
@@ -39,10 +40,16 @@ class WelcomeView(discord.ui.View):
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
         role = interaction.guild.get_role(ROLE_ID)
         if role:
+            await asyncio.sleep(1)  # ← تأخير بسيط لتجنب Too Many Requests
             await interaction.user.add_roles(role)
-            await interaction.response.send_message("✨ تم قبولك بنجاح! مرحبًا بك في Titabronsia.", ephemeral=True)
+            await interaction.response.send_message(
+                "✨ تم قبولك بنجاح! مرحبًا بك في Titabronsia.",
+                ephemeral=True
+            )
+            print(f"🟢 {interaction.user} حصل على الرتبة.")
         else:
             await interaction.response.send_message("❌ لم يتم العثور على الرتبة.", ephemeral=True)
+            print("🔴 لم يتم العثور على الرتبة.")
 
 @bot.event
 async def on_ready():

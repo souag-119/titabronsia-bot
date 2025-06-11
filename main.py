@@ -4,7 +4,7 @@ from discord import app_commands
 import os
 from flask import Flask
 from threading import Thread
-import asyncio  # ← أضفنا هذا للسليب
+import asyncio  # ضروري لإضافة التأخير
 
 # إعداد Flask
 app = Flask(__name__)
@@ -29,8 +29,8 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-GUILD_ID = 1241372550198460487  # ← ضع ID السيرفر
-ROLE_ID = 1264593302137733180   # ← ضع ID الرتبة
+GUILD_ID = 1241372550198460487  # ← ID السيرفر
+ROLE_ID = 1264593302137733180   # ← ID الرتبة
 
 class WelcomeView(discord.ui.View):
     def __init__(self):
@@ -39,17 +39,22 @@ class WelcomeView(discord.ui.View):
     @discord.ui.button(label="✅ أوافق على الدخول", style=discord.ButtonStyle.success, custom_id="accept_entry")
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
         role = interaction.guild.get_role(ROLE_ID)
-        if role:
-            await asyncio.sleep(1)  # ← تأخير بسيط لتجنب Too Many Requests
-            await interaction.user.add_roles(role)
+        member = interaction.user
+
+        if role in member.roles:
+            await interaction.response.send_message(
+                "❗ لقد انضممت بالفعل إلى Titabronsia.",
+                ephemeral=True
+            )
+            print(f"🔁 {member} حاول الانضمام مجددًا.")
+        else:
+            await asyncio.sleep(1)  # تأخير بسيط لتفادي 429
+            await member.add_roles(role)
             await interaction.response.send_message(
                 "✨ تم قبولك بنجاح! مرحبًا بك في Titabronsia.",
                 ephemeral=True
             )
-            print(f"🟢 {interaction.user} حصل على الرتبة.")
-        else:
-            await interaction.response.send_message("❌ لم يتم العثور على الرتبة.", ephemeral=True)
-            print("🔴 لم يتم العثور على الرتبة.")
+            print(f"🟢 {member} حصل على الرتبة.")
 
 @bot.event
 async def on_ready():

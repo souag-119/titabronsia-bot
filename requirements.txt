@@ -1,2 +1,2 @@
-discord.py
-flask
+discord.py==2.3.4
+Flask==2.2.5

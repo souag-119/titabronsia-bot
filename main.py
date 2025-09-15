@@ -130,112 +130,62 @@ except Exception as e:
     print("❌ فشل تشغيل البوت:", e)
     raise
 
-import discord
-from discord.ext import commands, tasks
-import asyncio
+# ---- أوامر النوم/الاستيقاظ ----
+import datetime
 
-intents = discord.Intents.default()
-intents.message_content = True
-intents.guilds = True
-intents.members = True
+@bot.tree.command(name="sleep", description="وضع السيرفر في حالة نوم (إخفاء كل الرومات)", guild=discord.Object(id=GUILD_ID))
+async def sleep(interaction: discord.Interaction, hours: int = None):
+    guild = interaction.guild
+    member = interaction.user
 
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-guild_states = {}
-
-@bot.event
-async def on_ready():
-    print(f"✅ Logged in as {bot.user}")
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def bedtime(ctx, hours: float = None):
-    guild = ctx.guild
-
-    if guild.id in guild_states:
-        await ctx.send("⚠️ وضع النوم مفعل بالفعل. استعمل !wake لإيقافه.")
+    # السماح فقط للأدمنز
+    if not member.guild_permissions.administrator:
+        await interaction.response.send_message("❌ هذا الأمر مخصص للإدارة فقط.", ephemeral=True)
         return
 
-    prev_perms = {}
-    for member in guild.members:
-        if member.guild_permissions.administrator:
-            continue
-        prev_perms[member.id] = {}
-        for channel in guild.channels:
-            try:
-                prev_perms[member.id][channel.id] = channel.overwrites_for(member)
-                await channel.set_permissions(member, view_channel=False)
-            except Exception as e:
-                print(f"❌ خطأ مع {member} في {channel}: {e}")
-
-    bedtime_channel = await guild.create_text_channel("حان وقت النوم")
-    for member in guild.members:
-        if member.guild_permissions.administrator:
-            await bedtime_channel.set_permissions(member, view_channel=True, send_messages=True)
-        else:
-            await bedtime_channel.set_permissions(member, view_channel=True, send_messages=False)
-
-    await bedtime_channel.send("اذهبوا للنوم")
-
-    @tasks.loop(seconds=20)
-    async def spam_message():
+    # إخفاء كل القنوات
+    for channel in guild.channels:
         try:
-            await bedtime_channel.send("اذهبوا للنوم")
-        except:
-            pass
+            await channel.set_permissions(guild.default_role, view_channel=False)
+        except Exception as e:
+            print(f"⚠️ لم أتمكن من تعديل {channel}: {e}")
 
-    spam_message.start()
-
-    guild_states[guild.id] = {
-        "prev_perms": prev_perms,
-        "bedtime_channel": bedtime_channel,
-        "task": spam_message
-    }
-
-    msg = "🌙 تم تفعيل وضع النوم!"
+    msg = "🌙 تم تفعيل وضع النوم — القنوات الآن مخفية."
     if hours:
-        msg += f" سوف يستمر {hours} ساعة ثم يستيقظ تلقائياً."
+        wake_time = datetime.datetime.now() + datetime.timedelta(hours=hours)
+        msg += f"\n⏰ سيتم إعادة الفتح بعد {hours} ساعة (حوالي {wake_time.strftime('%H:%M')})."
+
         async def auto_wake():
-            await asyncio.sleep(int(hours * 3600))  # تحويل الساعات لثواني
-            if guild.id in guild_states:
-                channel = guild.text_channels[0]
-                await wake(channel, auto=True)
+            await asyncio.sleep(hours * 3600)
+            for channel in guild.channels:
+                try:
+                    await channel.set_permissions(guild.default_role, view_channel=True)
+                except Exception as e:
+                    print(f"⚠️ لم أتمكن من تعديل {channel}: {e}")
+            # لما يفيق يرسل رسالة في أول قناة نصية
+            text_channels = [c for c in guild.channels if isinstance(c, discord.TextChannel)]
+            if text_channels:
+                await text_channels[0].send("☀️ استيقظ السيرفر — القنوات مفتوحة الآن!")
+
         bot.loop.create_task(auto_wake())
 
-    await ctx.send(msg)
+    await interaction.response.send_message(msg)
 
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def wake(ctx, auto: bool = False):
-    guild = ctx.guild
-    if guild.id not in guild_states:
-        if not auto:
-            await ctx.send("⚠️ وضع النوم غير مفعل.")
+@bot.tree.command(name="wake", description="إعادة فتح القنوات (إلغاء وضع النوم)", guild=discord.Object(id=GUILD_ID))
+async def wake(interaction: discord.Interaction):
+    guild = interaction.guild
+    member = interaction.user
+
+    if not member.guild_permissions.administrator:
+        await interaction.response.send_message("❌ هذا الأمر مخصص للإدارة فقط.", ephemeral=True)
         return
 
-    state = guild_states[guild.id]
-    state["task"].cancel()
+    for channel in guild.channels:
+        try:
+            await channel.set_permissions(guild.default_role, view_channel=True)
+        except Exception as e:
+            print(f"⚠️ لم أتمكن من تعديل {channel}: {e}")
 
-    try:
-        await state["bedtime_channel"].delete()
-    except:
-        pass
+    await interaction.response.send_message("☀️ تم إعادة فتح القنوات بنجاح!")
 
-    for member_id, ch_data in state["prev_perms"].items():
-        member = guild.get_member(member_id)
-        if not member:
-            continue
-        for ch_id, perms in ch_data.items():
-            channel = guild.get_channel(ch_id)
-            if channel:
-                try:
-                    await channel.set_permissions(member, overwrite=perms)
-                except Exception as e:
-                    print(f"❌ خطأ استرجاع {member} في {channel}: {e}")
-
-    del guild_states[guild.id]
-    if not auto:
-        await ctx.send("🌞 تم إلغاء وضع النوم وإرجاع كل شيء طبيعي.")
-    else:
-        await ctx.send("⏰ انتهى وقت النوم تلقائياً وتم إرجاع الوضع الطبيعي.")
